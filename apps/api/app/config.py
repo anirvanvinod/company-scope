@@ -31,8 +31,10 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket_documents: str = "companyscope-documents"
 
-    # Companies House API — required for ingestion (implemented in later phases)
+    # Companies House API
     ch_api_key: str = ""
+    # Override in tests or staging; production value is the live CH API.
+    ch_base_url: str = "https://api.company-information.service.gov.uk"
 
     # Application secret — used for session signing (auth implemented in later phases)
     secret_key: str = "change-me-in-production"
