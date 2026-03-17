@@ -1,0 +1,8 @@
+{
+  "name": "@companyscope/schemas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript types and generated API schemas",
+  "main": "./index.ts",
+  "types": "./index.ts"
+}

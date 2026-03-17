@@ -1,0 +1,135 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # Data stores
+  # ---------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: companyscope
+      POSTGRES_PASSWORD: companyscope
+      POSTGRES_DB: companyscope
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U companyscope -d companyscope"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      # MinIO exposes a dedicated liveness endpoint at /minio/health/live.
+      # We use bash TCP redirection (/dev/tcp) rather than curl/wget because
+      # the minio/minio base image does not guarantee either tool is present.
+      test: ["CMD-SHELL", "bash -c 'printf \"GET /minio/health/live HTTP/1.0\r\nHost: localhost\r\n\r\n\" > /dev/tcp/localhost/9000' 2>/dev/null && exit 0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------------
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://companyscope:companyscope@postgres:5432/companyscope
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Hot reload in development: sync source changes into the container
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/api
+          target: /app
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://companyscope:companyscope@postgres:5432/companyscope
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      celery -A app.main:celery_app worker
+      --loglevel=info
+      --queues=company_refresh,document_fetch,document_parse,risk_recompute,watchlist_refresh,send_notifications,rebuild_snapshots
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/worker
+          target: /app
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser-visible URL — baked into client-side JS at build time.
+      # Must use the host-accessible address, not the Docker service name.
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Server-side URL — used by Next.js server components and route handlers.
+      # Uses the Docker-internal service name; never exposed to the browser.
+      API_INTERNAL_URL: http://api:8000
+    depends_on:
+      - api
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

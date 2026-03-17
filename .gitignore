@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+
+# uv
+.uv/
+
+# Environment files — never commit real env files
+.env
+.env.local
+.env.*.local
+# .env.example is committed intentionally
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker / infra local state
+infra/opentofu/.terraform/
+infra/opentofu/*.tfstate
+infra/opentofu/*.tfstate.backup
+
+# MinIO local data (if running outside Docker volumes)
+data/minio/
+
+# Test artifacts
+*.log

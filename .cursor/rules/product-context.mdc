@@ -1,0 +1,55 @@
+---
+description: Product context and positioning for CompanyScope
+globs:
+alwaysApply: true
+---
+
+# CompanyScope product context
+
+## What this product is
+CompanyScope is an explainable UK company intelligence platform built primarily on top of Companies House public data.
+
+It helps users:
+- search UK companies
+- view filing-derived financial trends
+- inspect officers, PSCs, charges, and filing behaviour
+- review transparent risk and confidence signals
+
+## What this product is not
+Do not describe the product as:
+- investment advice
+- legal advice
+- accounting advice
+- regulated credit scoring
+- guaranteed prediction of company performance
+
+Avoid language like:
+- “best company to invest in”
+- “safe investment”
+- “guaranteed returns”
+- “approved for lending”
+
+Prefer language like:
+- company intelligence
+- public-data analysis
+- filing-based signals
+- due diligence support
+- explainable risk indicators
+
+## Product principles
+- Source first
+- Explainability over black box scoring
+- Confidence must be visible
+- Missing data must stay missing
+- Every important insight should trace back to a source filing or official endpoint
+
+## User experience goals
+- Search should feel fast
+- Company pages should show value quickly
+- Signals must explain why they exist
+- Every data-rich panel should show freshness and caveats where relevant
+
+## Data handling rules
+- Distinguish clearly between raw facts, parsed facts, derived metrics, and rule-based signals
+- Never silently convert unavailable values into zero
+- Never fabricate financial fields that were not extracted with adequate confidence

@@ -1,0 +1,19 @@
+{
+  "name": "companyscope",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter companyscope-web dev",
+    "build": "pnpm --filter companyscope-web build",
+    "lint": "pnpm -r lint",
+    "type-check": "pnpm -r type-check",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}

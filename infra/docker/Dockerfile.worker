@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install uv for fast dependency management
+RUN pip install --no-cache-dir uv
+
+# Install runtime dependencies before copying source (better layer caching).
+# Update this list when apps/worker/pyproject.toml dependencies change.
+RUN uv pip install --system \
+    "celery[redis]>=5.4" \
+    "pydantic>=2.8" \
+    "pydantic-settings>=2.4" \
+    "sqlalchemy>=2.0" \
+    "alembic>=1.13" \
+    "asyncpg>=0.29" \
+    "redis>=5.0" \
+    "httpx>=0.27"
+
+COPY apps/worker/ .
+
+# Default command: start a Celery worker consuming all defined queues.
+# The docker-compose.yml overrides this with the full queue list.
+CMD ["celery", "-A", "app.main:celery_app", "worker", "--loglevel=info"]

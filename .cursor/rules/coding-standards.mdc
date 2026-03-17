@@ -1,0 +1,46 @@
+---
+description: Coding and quality standards for CompanyScope
+globs:
+alwaysApply: true
+---
+
+# CompanyScope coding standards
+
+## General
+- Prefer clarity over cleverness
+- Use small, composable modules
+- Keep business logic out of UI components
+- Add docstrings or comments where intent is not obvious
+- Keep naming consistent with docs and API contracts
+
+## TypeScript standards
+- Use strict TypeScript
+- Avoid `any`
+- Validate external data with Zod or shared schemas
+- Keep React components focused and accessible
+- Use TanStack Query for server state
+
+## Python standards
+- Use Pydantic models for request and response validation
+- Use SQLAlchemy for persistence
+- Keep parser logic pure where possible
+- Use Decimal for monetary values, not float
+- Separate extraction, mapping, validation, and persistence concerns
+
+## API and schema discipline
+- Align endpoint names and payloads with `docs/03-api-spec.md`
+- Align financial fact naming with `docs/02-database-schema.md`
+- Preserve provenance fields on extracted data
+- Use consistent error response shapes
+
+## Testing expectations
+- Add or update tests for meaningful behaviour changes
+- Parser changes should include fixture or golden test updates
+- New signals should include triggering and non-triggering tests
+- Avoid merging major logic without at least unit and integration coverage
+
+## Security standards
+- Never expose secrets client-side
+- Never log sensitive secret values
+- Validate all incoming parameters
+- Rate-limit public-facing search and refresh endpoints

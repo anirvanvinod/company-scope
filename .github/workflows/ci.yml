@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Python services: lint and type check
+  # ---------------------------------------------------------------------------
+  python-checks:
+    name: Python — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, worker]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Install dev tools
+        run: |
+          uv pip install --system \
+            ruff \
+            mypy \
+            pydantic \
+            "pydantic-settings" \
+            fastapi \
+            sqlalchemy \
+            "celery[redis]"
+
+      - name: Ruff lint — apps/${{ matrix.service }}
+        run: ruff check apps/${{ matrix.service }}
+
+      - name: Ruff format check — apps/${{ matrix.service }}
+        run: ruff format --check apps/${{ matrix.service }}
+
+      - name: Mypy — apps/${{ matrix.service }}
+        run: mypy apps/${{ matrix.service }}/app
+
+  # ---------------------------------------------------------------------------
+  # Web app: type check and lint
+  # ---------------------------------------------------------------------------
+  web-checks:
+    name: Web — lint and type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: apps/web
+
+      - name: ESLint
+        run: pnpm lint
+        working-directory: apps/web
+
+      - name: TypeScript type check
+        run: pnpm type-check
+        working-directory: apps/web
+
+  # ---------------------------------------------------------------------------
+  # Docker Compose: smoke test that services start
+  # ---------------------------------------------------------------------------
+  docker-smoke:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+    # Only run on push to avoid burning CI minutes on every PR draft
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy env file
+        run: cp .env.example .env
+
+      - name: Build and start services
+        run: docker compose up -d --build postgres redis minio api worker
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/internal/v1/health; then
+              echo "API is healthy"
+              exit 0
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 3
+          done
+          echo "API did not become healthy in time"
+          docker compose logs api
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

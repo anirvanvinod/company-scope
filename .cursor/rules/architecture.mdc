@@ -1,0 +1,72 @@
+---
+description: Architecture and repo structure rules for CompanyScope
+globs:
+alwaysApply: true
+---
+
+# CompanyScope architecture rules
+
+## Preferred stack
+- Frontend: Next.js, TypeScript, Tailwind, shadcn/ui
+- Backend API: FastAPI
+- Background workers: Celery or Dramatiq
+- Database: PostgreSQL
+- Cache and queue: Redis
+- Object storage: MinIO
+- Monitoring: Prometheus, Grafana, Loki
+
+## Architectural direction
+Use a modular monorepo with separate app boundaries for:
+- web app
+- API service
+- worker service
+
+Recommended structure:
+
+```text
+/apps
+  /web
+  /api
+  /worker
+/packages
+  /schemas
+  /ui
+  /config
+/docs
+```
+
+## Service boundaries
+### Web app
+Responsible for:
+- UI rendering
+- client-side interactions
+- authenticated user flows
+- calling internal API only
+
+### API service
+Responsible for:
+- Companies House integration
+- aggregate company endpoints
+- auth and watchlist endpoints
+- persistence orchestration
+- signal generation requests
+
+### Worker service
+Responsible for:
+- ingestion jobs
+- document fetch jobs
+- parser jobs
+- refresh scheduling
+- reprocessing and repair jobs
+
+## Upstream API usage rules
+- Never call Companies House directly from the browser
+- Keep Companies House API keys server-side only
+- Use caching and background hydration aggressively
+- Treat parser extraction as best-effort, not guaranteed
+
+## Data modelling direction
+- Store period-based financial facts
+- Preserve source provenance for every extracted fact
+- Version parser runs and methodology changes
+- Do not overwrite raw extraction history destructively

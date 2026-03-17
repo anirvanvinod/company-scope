@@ -1,0 +1,46 @@
+---
+description: API contract rules for CompanyScope
+globs:
+alwaysApply: true
+---
+
+# CompanyScope API contract rules
+
+## General contract expectations
+- Keep APIs RESTful and predictable
+- Use explicit versioning if breaking changes are introduced
+- Validate all request parameters
+- Return structured error objects
+- Do not leak internal-only fields unless explicitly intended
+
+## Core endpoint groups
+- search
+- company aggregate
+- filings
+- financials
+- signals
+- officers
+- ownership / PSC
+- charges
+- watchlists
+- internal ingestion endpoints
+
+## Response design rules
+- Include `last_refreshed_at` where freshness matters
+- Include `source` or provenance metadata where relevant
+- Include confidence metadata for parsed facts and derived metrics
+- Separate unavailable values from zero values
+- Use pagination for filing lists and large collections
+
+## Error format
+Every error response should include:
+- error code
+- human-readable message
+- optional details
+- retryable boolean where helpful
+
+## Contract discipline
+- If a frontend shape changes, update the API spec
+- If a parser output shape changes, update downstream schemas
+- Avoid mixing raw upstream fields and product-normalised fields without clear naming
+- Prefer stable field names over mirroring noisy upstream naming
