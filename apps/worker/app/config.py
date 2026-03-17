@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Companies House API — required for ingestion tasks (implemented in later phases)
     ch_api_key: str = ""
+    ch_base_url: str = "https://api.company-information.service.gov.uk"
 
 
 # Module-level singleton; imported by task modules.

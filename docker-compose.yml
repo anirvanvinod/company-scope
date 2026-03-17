@@ -52,6 +52,23 @@ services:
       timeout: 5s
       retries: 5
 
+  minio-init:
+    # One-shot service that creates required buckets after MinIO is healthy.
+    # Uses the official MinIO client (mc). Exits 0 on success; Docker Compose
+    # treats non-zero exit as failure so the worker will not start if this fails.
+    # mc mb --ignore-existing is idempotent — safe on every `docker compose up`.
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/companyscope-documents &&
+        echo 'Bucket companyscope-documents is ready.'
+      "
+    restart: "no"
+
   # ---------------------------------------------------------------------------
   # Application services
   # ---------------------------------------------------------------------------
@@ -95,6 +112,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     command: >
       celery -A app.main:celery_app worker
       --loglevel=info

@@ -16,13 +16,10 @@ celery_app = Celery(
     "companyscope_worker",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    # Task modules are registered here as they are implemented in later phases:
-    # "app.tasks.ingestion",
-    # "app.tasks.document_fetch",
-    # "app.tasks.parser",
+    # Task modules registered as they are implemented:
     # "app.tasks.risk_engine",
     # "app.tasks.snapshot",
-    include=[],
+    include=["app.tasks.ingestion", "app.tasks.document_fetch", "app.tasks.document_parse", "app.tasks.extraction"],
 )
 
 celery_app.conf.update(

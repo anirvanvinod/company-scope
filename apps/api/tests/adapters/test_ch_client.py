@@ -21,14 +21,15 @@ import pytest
 import respx
 from unittest.mock import AsyncMock, patch
 
-from app.adapters.companies_house.client import CH_BASE_URL, CompaniesHouseClient
-from app.adapters.companies_house.exceptions import (
+from ch_client.client import CH_BASE_URL, CompaniesHouseClient
+from ch_client.exceptions import (
     CHAuthError,
     CHNotFoundError,
     CHRateLimitError,
+    CHRequestError,
     CHUpstreamError,
 )
-from app.adapters.companies_house.schemas import (
+from ch_client.schemas import (
     CHChargesResponse,
     CHCompanyProfile,
     CHFilingHistoryResponse,

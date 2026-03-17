@@ -153,6 +153,8 @@ create table filing_documents (
   storage_etag text,
   fetch_status varchar(32) not null default 'pending',
   parse_status varchar(32) not null default 'pending',
+  -- Populated by Phase 5A classifier: 'ixbrl', 'xbrl', 'html', 'pdf', 'unsupported'
+  document_format varchar(32),
   downloaded_at timestamptz,
   metadata_payload jsonb,
   created_at timestamptz not null default now(),
@@ -489,7 +491,9 @@ Tracks company refresh attempts.
 ```sql
 create table refresh_runs (
   id uuid primary key,
-  company_id uuid not null references companies(id) on delete cascade,
+  -- Nullable: full refreshes (trigger_type='full') create the run before the
+  -- company_id is known.  Partial refreshes always set this to a real UUID.
+  company_id uuid references companies(id) on delete cascade,
   trigger_type varchar(32) not null,
   requested_by_user_id uuid references users(id) on delete set null,
   status varchar(32) not null,
@@ -512,6 +516,8 @@ create table extraction_runs (
   filing_id uuid references filings(id) on delete set null,
   filing_document_id uuid references filing_documents(id) on delete set null,
   parser_version varchar(32) not null,
+  -- Format detected at time of run: 'ixbrl', 'xbrl', 'html', 'pdf', 'unsupported'
+  document_format varchar(32),
   status varchar(32) not null,
   confidence numeric(5,4),
   warnings jsonb,
@@ -607,7 +613,9 @@ Use PostgreSQL enums only if your team is comfortable with migration overhead. O
 Suggested controlled vocabularies:
 - `freshness_status`: fresh, stale, refreshing, partial
 - `fetch_status`: pending, fetched, unavailable, failed
-- `parse_status`: pending, parsed, unsupported, failed
+- `parse_status`: pending, classified, parsed, unsupported, failed
+  - `classified` — Phase 5A: format detected; awaiting Phase 5B extraction
+- `document_format`: ixbrl, xbrl, html, pdf, unsupported
 - `severity`: low, medium, high
 - `status`: active, resolved, suppressed
 
