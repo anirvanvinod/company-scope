@@ -8,8 +8,13 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      // Design tokens and custom colours will be added in Phase 7 (frontend MVP)
-      // following docs/07-frontend-wireframes.md §Design tokens
+      fontFamily: {
+        // Inter loaded via next/font/google; --font-inter CSS variable set in layout.tsx
+        sans: ["var(--font-inter)", "system-ui", "ui-sans-serif", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
+      // The stone palette gives us the warm neutral we want — no custom colors needed.
+      // Semantic tokens are enforced through consistent class usage, not custom colors.
     },
   },
   plugins: [],

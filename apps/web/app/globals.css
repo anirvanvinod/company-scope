@@ -1,3 +1,48 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* Smooth font rendering */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Consistent box model */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Remove default list styles used in component lists */
+  ul[role="list"],
+  ol[role="list"] {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Focus visible ring — accessible but not intrusive */
+  :focus-visible {
+    outline: 2px solid theme("colors.blue.500");
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Tabular numbers for financial figures */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Monospace style for company numbers and IDs */
+  .mono-id {
+    font-family: theme("fontFamily.mono");
+    font-size: 0.8125rem; /* 13px */
+    letter-spacing: 0.02em;
+  }
+}
