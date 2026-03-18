@@ -148,6 +148,10 @@ async def _compute_analysis_async(company_number: str) -> dict[str, Any]:
         prior.period_end if prior else None,
     )
 
+    # Enqueue snapshot build now that analysis results are persisted.
+    from app.tasks.snapshot import build_snapshot  # local import avoids circular
+    build_snapshot.apply_async(args=[company_number])
+
     return {
         "company_number": company_number,
         "status": "ok",

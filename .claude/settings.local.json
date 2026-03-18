@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_ixbrl_extractor.py tests/test_html_extractor.py -x -q)",
+      "Bash(uv run:*)",
+      "Bash(1:*)",
+      "Bash(python -m pytest tests/test_extraction.py::test_successful_extraction_increments_extracted -v)",
+      "Bash(git -C /c/Users/anirv/Documents/sandbox/uk-companies-financial-analysis diff --name-only HEAD)",
+      "Bash(git -C /c/Users/anirv/Documents/sandbox/uk-companies-financial-analysis status --short)",
+      "Bash(python -m pytest apps/worker/tests/test_extraction.py::test_successful_extraction_increments_extracted -v --no-header)",
+      "Bash(.venv/Scripts/pytest apps/worker/tests/test_extraction.py::test_successful_extraction_increments_extracted -v 2>&1)",
+      "Bash(python -m pytest tests/test_routes_companies.py -v --tb=short)"
+    ]
+  }
+}

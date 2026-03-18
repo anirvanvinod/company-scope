@@ -37,7 +37,7 @@ from typing import Literal
 # Increment when classifier logic changes in a way that would change the
 # output for any document.  Downstream extraction_runs rows record this
 # version so re-parse history is traceable to the classifier that ran.
-PARSER_VERSION = "1.0.0"
+PARSER_VERSION = "1.1.0"
 
 # All valid DocumentFormat values.
 DocumentFormat = Literal["ixbrl", "xbrl", "html", "pdf", "unsupported"]

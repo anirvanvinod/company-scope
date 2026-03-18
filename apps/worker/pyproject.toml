@@ -17,11 +17,15 @@ dependencies = [
     "companyscope-ch-client",
 ]
 
+[tool.uv.sources]
+companyscope-ch-client = { workspace = true }
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "anyio>=4.0",
+    "respx>=0.21",
     "ruff>=0.6",
     "mypy>=1.11",
 ]

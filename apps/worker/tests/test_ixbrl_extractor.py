@@ -11,6 +11,9 @@ Tests cover:
   - XML recovery: malformed document (HTML entity) still parses with recover=True
   - Currency detection: GBP default; explicit ISO 4217 code
   - Error path: completely unparseable XML returns ExtractionResult with errors
+  - Phase 5C — Segment filtering: facts in dimensioned contexts are excluded
+  - Phase 5C — ix:nonNumeric: employee count facts extracted from text elements
+  - Phase 5C — accounts_type: detected from taxonomy tag and from heading text
 """
 
 from __future__ import annotations
@@ -304,9 +307,12 @@ def test_instant_context_period_end_only() -> None:
 
 
 def test_unparseable_xml_returns_error() -> None:
+    # lxml recover=True can parse almost anything; for truly unrecognised content
+    # the extractor returns either errors (hard parse fail) or a warning (no
+    # iXBRL namespace found).  Either way, no facts are extracted.
     garbage = b"<not valid xml at all >><<"
     result = extract_ixbrl(garbage)
-    assert result.errors != []
+    assert result.errors != [] or result.warnings != []
     assert result.facts == []
 
 
@@ -336,3 +342,229 @@ def test_run_confidence_is_decimal() -> None:
     content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
     result = extract_ixbrl(content)
     assert isinstance(result.run_confidence, Decimal)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5C — Segment / dimension context filtering
+# ---------------------------------------------------------------------------
+
+
+def _ctx_duration_segmented(ctx_id: str, start: str, end: str) -> str:
+    """Duration context with an xbrli:segment child — should be excluded."""
+    return f"""
+    <xbrli:context id="{ctx_id}">
+      <xbrli:entity>
+        <xbrli:identifier scheme="x">12345678</xbrli:identifier>
+        <xbrli:segment>
+          <xbrldi:explicitMember xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+            dimension="uk-bus:EntityCurrentLegalOrRegisteredName">uk-bus:SomeSegment
+          </xbrldi:explicitMember>
+        </xbrli:segment>
+      </xbrli:entity>
+      <xbrli:period>
+        <xbrli:startDate>{start}</xbrli:startDate>
+        <xbrli:endDate>{end}</xbrli:endDate>
+      </xbrli:period>
+    </xbrli:context>"""
+
+
+def _ctx_duration_scenario(ctx_id: str, start: str, end: str) -> str:
+    """Duration context with an xbrli:scenario child — should be excluded."""
+    return f"""
+    <xbrli:context id="{ctx_id}">
+      <xbrli:entity><xbrli:identifier scheme="x">12345678</xbrli:identifier></xbrli:entity>
+      <xbrli:period>
+        <xbrli:startDate>{start}</xbrli:startDate>
+        <xbrli:endDate>{end}</xbrli:endDate>
+      </xbrli:period>
+      <xbrli:scenario>
+        <xbrldi:explicitMember xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+          dimension="uk-bus:SomeDimension">uk-bus:SomeValue
+        </xbrldi:explicitMember>
+      </xbrli:scenario>
+    </xbrli:context>"""
+
+
+def test_segment_context_fact_excluded() -> None:
+    """Facts in a context with xbrli:segment should not appear in results."""
+    ctx_top = _ctx_duration("ctx_top", "2023-01-01", "2023-12-31")
+    ctx_seg = _ctx_duration_segmented("ctx_seg", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f_top = _fact("uk-gaap:Turnover", "ctx_top", "GBP", "1000000")
+    f_seg = _fact("uk-gaap:Turnover", "ctx_seg", "GBP", "600000")
+    content = _build_ixbrl(contexts=ctx_top + ctx_seg, units=unit, facts=f_top + f_seg)
+    result = extract_ixbrl(content)
+    revenue_facts = [f for f in result.facts if f.canonical_name == "revenue"]
+    assert len(revenue_facts) == 1
+    assert revenue_facts[0].fact_value == Decimal("1000000")
+
+
+def test_scenario_context_fact_excluded() -> None:
+    """Facts in a context with xbrli:scenario should not appear in results."""
+    ctx_top = _ctx_duration("ctx_top", "2023-01-01", "2023-12-31")
+    ctx_scn = _ctx_duration_scenario("ctx_scn", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f_top = _fact("uk-gaap:Turnover", "ctx_top", "GBP", "900000")
+    f_scn = _fact("uk-gaap:Turnover", "ctx_scn", "GBP", "400000")
+    content = _build_ixbrl(contexts=ctx_top + ctx_scn, units=unit, facts=f_top + f_scn)
+    result = extract_ixbrl(content)
+    revenue_facts = [f for f in result.facts if f.canonical_name == "revenue"]
+    assert len(revenue_facts) == 1
+    assert revenue_facts[0].fact_value == Decimal("900000")
+
+
+def test_top_level_context_fact_not_excluded() -> None:
+    """Facts in a plain context (no segment/scenario) are retained normally."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _fact("uk-gaap:Turnover", "ctx1", "GBP", "750000")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    assert len([f for f in result.facts if f.canonical_name == "revenue"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 5C — ix:nonNumeric employee count extraction
+# ---------------------------------------------------------------------------
+
+
+def _nonnumeric_fact(name: str, ctx: str, value: str) -> str:
+    """Build a minimal ix:nonNumeric element."""
+    return f'<ix:nonNumeric name="{name}" contextRef="{ctx}">{value}</ix:nonNumeric>'
+
+
+def test_nonnumeric_employee_count_extracted() -> None:
+    """ix:nonNumeric with a known employee count tag should produce a RawFact."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _nonnumeric_fact("uk-bus:AverageNumberEmployeesDuringPeriod", "ctx1", "25")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    emp_facts = [f for f in result.facts if f.canonical_name == "average_number_of_employees"]
+    assert len(emp_facts) == 1
+    assert emp_facts[0].fact_value == Decimal("25")
+    assert emp_facts[0].unit == "count"
+
+
+def test_nonnumeric_leading_digit_extracted() -> None:
+    """ix:nonNumeric with 'N (2022: M)' text extracts the leading number."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _nonnumeric_fact("uk-bus:AverageNumberOfEmployees", "ctx1", "12 (2022: 10)")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    emp_facts = [f for f in result.facts if f.canonical_name == "average_number_of_employees"]
+    assert len(emp_facts) == 1
+    assert emp_facts[0].fact_value == Decimal("12")
+
+
+def test_nonnumeric_non_parseable_text_skipped() -> None:
+    """ix:nonNumeric with non-numeric text (e.g. company name) should be skipped."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    # Use a tag that doesn't map to any canonical name
+    f = _nonnumeric_fact("uk-bus:NameOfUltimateParent", "ctx1", "Acme Holdings Ltd")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    # Should produce no facts (tag not canonical, or text not parseable)
+    assert all(f.canonical_name != "average_number_of_employees" for f in result.facts)
+
+
+def test_nonnumeric_in_segment_context_excluded() -> None:
+    """ix:nonNumeric in a segmented context should also be excluded."""
+    ctx_top = _ctx_duration("ctx_top", "2023-01-01", "2023-12-31")
+    ctx_seg = _ctx_duration_segmented("ctx_seg", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f_top = _nonnumeric_fact("uk-bus:AverageNumberEmployeesDuringPeriod", "ctx_top", "30")
+    f_seg = _nonnumeric_fact("uk-bus:AverageNumberEmployeesDuringPeriod", "ctx_seg", "15")
+    content = _build_ixbrl(contexts=ctx_top + ctx_seg, units=unit, facts=f_top + f_seg)
+    result = extract_ixbrl(content)
+    emp_facts = [f for f in result.facts if f.canonical_name == "average_number_of_employees"]
+    assert len(emp_facts) == 1
+    assert emp_facts[0].fact_value == Decimal("30")
+
+
+# ---------------------------------------------------------------------------
+# Phase 5C — accounts_type detection
+# ---------------------------------------------------------------------------
+
+
+def _nonnumeric_accounts_type(tag: str, value: str, ctx: str = "ctx1") -> str:
+    return f'<ix:nonNumeric name="{tag}" contextRef="{ctx}">{value}</ix:nonNumeric>'
+
+
+def test_accounts_type_from_taxonomy_tag_small() -> None:
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _nonnumeric_accounts_type("uk-bus:AccountsType", "Small Company Accounts")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    assert result.accounts_type == "small"
+
+
+def test_accounts_type_from_taxonomy_tag_micro() -> None:
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _nonnumeric_accounts_type("core:TypeOfAccounts", "Micro Entity Accounts")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    assert result.accounts_type == "micro-entity"
+
+
+def test_accounts_type_from_taxonomy_tag_dormant() -> None:
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _nonnumeric_accounts_type("uk-bus:AccountsType", "Dormant Company Accounts")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    assert result.accounts_type == "dormant"
+
+
+def test_accounts_type_from_heading_small() -> None:
+    """accounts_type detected from <h1> heading text when no taxonomy tag present."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _fact("uk-gaap:Turnover", "ctx1", "GBP", "100000")
+    doc = f"""<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="{_IX_NS}" xmlns:ix="{_IX_NS}" xmlns:xbrli="{_XBRLI_NS}"
+      xmlns:uk-gaap="http://www.xbrl.org/uk/gaap/core/2009-09-01">
+  <head>
+    <ix:header><ix:references/><ix:resources><xbrli:xbrl>{ctx}{unit}</xbrli:xbrl></ix:resources></ix:header>
+  </head>
+  <body>
+    <h1>Small Company Accounts for the Year Ended 31 December 2023</h1>
+    {f}
+  </body>
+</html>"""
+    result = extract_ixbrl(doc.encode())
+    assert result.accounts_type == "small"
+
+
+def test_accounts_type_from_heading_micro_entity() -> None:
+    """'micro-entity' keyword in heading → accounts_type='micro-entity'."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _fact("uk-gaap:Turnover", "ctx1", "GBP", "50000")
+    doc = f"""<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="{_IX_NS}" xmlns:ix="{_IX_NS}" xmlns:xbrli="{_XBRLI_NS}"
+      xmlns:uk-gaap="http://www.xbrl.org/uk/gaap/core/2009-09-01">
+  <head>
+    <ix:header><ix:references/><ix:resources><xbrli:xbrl>{ctx}{unit}</xbrli:xbrl></ix:resources></ix:header>
+  </head>
+  <body>
+    <h2>Micro-Entity Accounts</h2>
+    {f}
+  </body>
+</html>"""
+    result = extract_ixbrl(doc.encode())
+    assert result.accounts_type == "micro-entity"
+
+
+def test_accounts_type_none_when_not_detectable() -> None:
+    """accounts_type is None when no taxonomy tag or heading keyword present."""
+    ctx = _ctx_duration("ctx1", "2023-01-01", "2023-12-31")
+    unit = _unit_gbp()
+    f = _fact("uk-gaap:Turnover", "ctx1", "GBP", "100000")
+    content = _build_ixbrl(contexts=ctx, units=unit, facts=f)
+    result = extract_ixbrl(content)
+    assert result.accounts_type is None

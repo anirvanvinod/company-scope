@@ -16,6 +16,9 @@ dependencies = [
     "companyscope-ch-client",
 ]
 
+[tool.uv.sources]
+companyscope-ch-client = { workspace = true }
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",

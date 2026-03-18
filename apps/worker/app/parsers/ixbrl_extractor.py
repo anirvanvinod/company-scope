@@ -7,13 +7,14 @@ Entry point:
 The extractor:
 1. Parses the document as XML (with recover fallback for HTML entities).
 2. Detects the iXBRL inline namespace in use.
-3. Extracts all XBRL context definitions (period dates).
+3. Extracts all XBRL context definitions (period dates, segment flags).
 4. Extracts all XBRL unit definitions (currency codes).
-5. Iterates ix:nonFraction elements to collect numeric monetary facts.
+5. Iterates ix:nonFraction and ix:nonNumeric elements to collect facts.
 6. Maps each fact's XBRL tag to a canonical fact name.
 7. Scores each fact's confidence.
 8. Determines the primary period from context frequency.
 9. Marks comparative-year facts.
+10. Detects accounts_type from taxonomy tags or document headings.
 
 Numeric value parsing:
     Handles: scale attribute (10^n multiplier), sign="-" attribute,
@@ -21,17 +22,25 @@ Numeric value parsing:
     separators.  sign and brackets are XOR-combined so that sign="-"
     with brackets produces a positive (they cancel each other).
 
-Known limitations (Phase 5B):
-    - ix:nonNumeric elements (text facts like employee counts from some
-      taxonomies) are not extracted; only ix:nonFraction is processed.
-    - accounts_type is not detected from the document; always None.
-    - Segment/dimension context filtering is not applied; all facts in
-      the primary context are treated as top-level.
+Segment filtering (Phase 5C):
+    XBRL contexts containing xbrli:segment or xbrli:scenario elements
+    indicate dimensional (non-consolidated) facts and are excluded from
+    extraction.  Only top-level entity-wide contexts are retained.
+
+Known limitations (Phase 5C):
+    - ix:nonNumeric parsing attempts decimal extraction from text content;
+      non-numeric text facts (e.g. company names) are silently skipped.
+    - accounts_type detection from heading text may mis-fire if "dormant"
+      or "small" appears in a company name or boilerplate text.
+    - Segment filtering excludes all dimensioned contexts conservatively;
+      rare edge cases where xbrli:segment is used for non-segment purposes
+      will also be excluded.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date
@@ -58,6 +67,36 @@ _IX_NS_CANDIDATES = [
     "http://www.xbrl.org/2011/inlineXBRL",
 ]
 
+# ---------------------------------------------------------------------------
+# Accounts type detection
+# ---------------------------------------------------------------------------
+
+# XBRL local tag names (lowercased, no separators) that carry accounts type
+_ACCOUNTS_TYPE_TAGS: frozenset[str] = frozenset([
+    "accountstype",
+    "typeofaccounts",
+    "typeofreport",
+])
+
+# Normalise raw accounts type text → canonical value
+_ACCOUNTS_TYPE_NORMALISE: dict[str, str] = {
+    "micro": "micro-entity",
+    "microentity": "micro-entity",
+    "microentityaccounts": "micro-entity",
+    "microentityreport": "micro-entity",
+    "small": "small",
+    "smallcompany": "small",
+    "smallcompanyaccounts": "small",
+    "full": "full",
+    "fullaccounts": "full",
+    "dormant": "dormant",
+    "dormantcompany": "dormant",
+    "dormantcompanyaccounts": "dormant",
+    "abridged": "abridged",
+    "abridgedaccounts": "abridged",
+    "abbreviated": "abbreviated",
+    "abbreviatedaccounts": "abbreviated",
+}
 
 # ---------------------------------------------------------------------------
 # Internal data structures
@@ -69,6 +108,7 @@ class _ContextInfo:
     period_start: date | None
     period_end: date | None
     is_instant: bool  # True = balance-sheet instant; False = duration period
+    is_segmented: bool = False  # True = has xbrli:segment or xbrli:scenario
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +159,7 @@ def extract_ixbrl(content: bytes) -> ExtractionResult:
     contexts = _extract_contexts(root)
     units = _extract_units(root)
     facts = _extract_facts(root, ix_ns, contexts, units)
+    accounts_type = _detect_accounts_type(root, ix_ns)
 
     period_start, period_end = _determine_primary_period(facts)
 
@@ -138,7 +179,7 @@ def extract_ixbrl(content: bytes) -> ExtractionResult:
         facts=facts,
         period_start=period_start,
         period_end=period_end,
-        accounts_type=None,  # detected in Phase 5C
+        accounts_type=accounts_type,
         currency_code=currency,
         run_confidence=run_conf,
         warnings=[],
@@ -155,12 +196,11 @@ def extract_ixbrl(content: bytes) -> ExtractionResult:
 def _detect_ix_namespace(root: etree._Element) -> str | None:
     """Return the iXBRL inline namespace URI used in this document, or None."""
     for ns in _IX_NS_CANDIDATES:
-        tag = f"{{{ns}}}nonFraction"
-        if next(root.iter(tag), None) is not None:
-            return ns
-        # Also check for the header element as confirmation
-        tag_hdr = f"{{{ns}}}header"
-        if next(root.iter(tag_hdr), None) is not None:
+        if (
+            next(root.iter(f"{{{ns}}}nonFraction"), None) is not None
+            or next(root.iter(f"{{{ns}}}nonNumeric"), None) is not None
+            or next(root.iter(f"{{{ns}}}header"), None) is not None
+        ):
             return ns
     return None
 
@@ -175,6 +215,8 @@ def _extract_contexts(root: etree._Element) -> dict[str, _ContextInfo]:
     Build a map of context_id → _ContextInfo from xbrli:context elements.
 
     Handles both duration (startDate/endDate) and instant contexts.
+    Contexts with xbrli:segment or xbrli:scenario descendants are flagged as
+    segmented (dimensional); their facts are excluded from extraction.
     """
     contexts: dict[str, _ContextInfo] = {}
     for ctx in root.iter(f"{{{_XBRLI_NS}}}context"):
@@ -189,17 +231,22 @@ def _extract_contexts(root: etree._Element) -> dict[str, _ContextInfo]:
         end_elem = period.find(f"{{{_XBRLI_NS}}}endDate")
         instant_elem = period.find(f"{{{_XBRLI_NS}}}instant")
 
+        # Detect dimensional contexts (non-consolidated segment/scenario facts)
+        has_segment = ctx.find(f".//{{{_XBRLI_NS}}}segment") is not None
+        has_scenario = ctx.find(f".//{{{_XBRLI_NS}}}scenario") is not None
+        is_segmented = has_segment or has_scenario
+
         if start_elem is not None and end_elem is not None:
             try:
                 ps = date.fromisoformat(start_elem.text.strip())
                 pe = date.fromisoformat(end_elem.text.strip())
-                contexts[ctx_id] = _ContextInfo(ps, pe, False)
+                contexts[ctx_id] = _ContextInfo(ps, pe, False, is_segmented)
             except (ValueError, AttributeError):
                 pass
         elif instant_elem is not None:
             try:
                 instant = date.fromisoformat(instant_elem.text.strip())
-                contexts[ctx_id] = _ContextInfo(None, instant, True)
+                contexts[ctx_id] = _ContextInfo(None, instant, True, is_segmented)
             except (ValueError, AttributeError):
                 pass
 
@@ -245,12 +292,26 @@ def _extract_facts(
     contexts: dict[str, _ContextInfo],
     units: dict[str, str],
 ) -> list[RawFact]:
-    """Iterate all ix:nonFraction elements and build RawFact instances."""
+    """
+    Iterate ix:nonFraction and ix:nonNumeric elements and build RawFact instances.
+
+    Segmented contexts (with xbrli:segment or xbrli:scenario) are skipped so
+    that only top-level, entity-wide facts are extracted.
+    """
     facts: list[RawFact] = []
+
+    # nonFraction: numeric monetary / ratio facts
     for elem in root.iter(f"{{{ix_ns}}}nonFraction"):
         fact = _parse_nonfraction(elem, contexts, units)
         if fact is not None:
             facts.append(fact)
+
+    # nonNumeric: text-valued facts (e.g. employee counts in some UK taxonomies)
+    for elem in root.iter(f"{{{ix_ns}}}nonNumeric"):
+        fact = _parse_nonnumeric(elem, contexts)
+        if fact is not None:
+            facts.append(fact)
+
     return facts
 
 
@@ -267,6 +328,11 @@ def _parse_nonfraction(
     context_ref = elem.get("contextRef", "")
     unit_ref = elem.get("unitRef", "")
     ctx = contexts.get(context_ref)
+
+    # Skip facts in segmented (dimensional) contexts
+    if ctx is not None and ctx.is_segmented:
+        return None
+
     unit = units.get(unit_ref, "GBP")
 
     # Collect all text content including from nested child elements
@@ -315,6 +381,174 @@ def _parse_nonfraction(
         mapping_method="direct_tag" if canonical else None,
         extraction_confidence=confidence,
     )
+
+
+def _parse_nonnumeric(
+    elem: etree._Element,
+    contexts: dict[str, _ContextInfo],
+) -> RawFact | None:
+    """
+    Parse one ix:nonNumeric element into a RawFact if it yields a mappable
+    numeric value (e.g. average employee counts tagged as text in some filings).
+
+    Non-numeric text values (company names, addresses, narrative text) are
+    silently skipped via the decimal parse guard in _parse_nonnumeric_value.
+    """
+    tag_name = elem.get("name", "")
+    if not tag_name:
+        return None
+
+    # Only process tags we can map to a canonical name
+    local_name = tag_name.split(":")[-1] if ":" in tag_name else tag_name
+    canonical = map_tag(local_name)
+    if canonical is None:
+        return None
+
+    context_ref = elem.get("contextRef", "")
+    ctx = contexts.get(context_ref)
+
+    # Skip segmented (dimensional) contexts
+    if ctx is not None and ctx.is_segmented:
+        return None
+
+    raw_text = "".join(elem.itertext()).strip()
+    if not raw_text:
+        return None
+
+    fact_value = _parse_nonnumeric_value(raw_text)
+    if fact_value is None:
+        return None
+
+    period_start = ctx.period_start if ctx else None
+    period_end = ctx.period_end if ctx else None
+    period_complete = ctx is not None
+
+    confidence = score_ixbrl_fact(
+        has_tag_mapping=True,
+        period_complete=period_complete,
+        decimals_present=False,  # nonNumeric elements have no decimals attribute
+    )
+
+    return RawFact(
+        raw_label=tag_name,
+        raw_tag=tag_name,
+        raw_context_ref=context_ref,
+        raw_value=raw_text,
+        fact_value=fact_value,
+        unit="count",
+        period_start=period_start,
+        period_end=period_end,
+        is_comparative=False,
+        scale=0,
+        canonical_name=canonical,
+        mapping_method="direct_tag",
+        extraction_confidence=confidence,
+    )
+
+
+def _parse_nonnumeric_value(text: str) -> Decimal | None:
+    """
+    Extract a numeric value from ix:nonNumeric text content.
+
+    Handles plain integers ("25"), comma-separated numbers ("1,234"),
+    and leading-digit extraction ("25 (2022: 23)").
+    Returns None if no numeric value can be extracted.
+    """
+    text = text.strip()
+    if not text:
+        return None
+
+    # Remove thousands separators and whitespace
+    cleaned = text.replace(",", "").replace("\xa0", "").replace(" ", "")
+
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        pass
+
+    # Try to extract a leading integer (e.g. "25 employees", "25 (2022: 23)")
+    match = re.match(r"^(\d+)", text)
+    if match:
+        try:
+            return Decimal(match.group(1))
+        except InvalidOperation:
+            pass
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Accounts type detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_accounts_type(root: etree._Element, ix_ns: str) -> str | None:
+    """
+    Detect accounts type from iXBRL taxonomy tags or document headings.
+
+    Priority:
+      1. ix:nonNumeric element with an AccountsType / TypeOfAccounts tag name.
+      2. Document heading text (h1–h4, title) containing keywords.
+
+    Returns a normalised accounts_type string ('micro-entity', 'small', 'full',
+    'dormant', 'abridged', 'abbreviated') or None if not determinable.
+    """
+    # 1. Look for explicit taxonomy tag in nonNumeric elements
+    for elem in root.iter(f"{{{ix_ns}}}nonNumeric"):
+        tag_name = elem.get("name", "")
+        local_norm = (
+            tag_name.split(":")[-1] if ":" in tag_name else tag_name
+        ).lower().replace("_", "").replace("-", "")
+        if local_norm in _ACCOUNTS_TYPE_TAGS:
+            text = "".join(elem.itertext()).strip()
+            result = _normalise_accounts_type(text)
+            if result:
+                return result
+
+    # 2. Fallback: scan document headings for keyword markers
+    return _detect_accounts_type_from_text(root)
+
+
+def _normalise_accounts_type(text: str) -> str | None:
+    """Normalise raw accounts type text to a canonical value."""
+    key = text.lower().replace(" ", "").replace("-", "").replace("_", "")
+    return _ACCOUNTS_TYPE_NORMALISE.get(key)
+
+
+def _detect_accounts_type_from_text(root: etree._Element) -> str | None:
+    """
+    Scan document heading elements for accounts type keywords.
+
+    Iterates h1–h4 and title elements only; limits scan to avoid false
+    positives from body text.
+    """
+    _HEADING_LOCAL_NAMES = frozenset(["h1", "h2", "h3", "h4", "title"])
+    checked = 0
+    for elem in root.iter():
+        if not isinstance(elem.tag, str):
+            continue
+        local = elem.tag.rpartition("}")[2].lower()
+        if local not in _HEADING_LOCAL_NAMES:
+            continue
+        text = " ".join(elem.itertext()).lower()
+        if not text:
+            continue
+        if "micro-entity" in text or "micro entity" in text:
+            return "micro-entity"
+        if "dormant" in text:
+            return "dormant"
+        if "abridged" in text:
+            return "abridged"
+        if "abbreviated" in text:
+            return "abbreviated"
+        if "small company" in text or "small companies" in text:
+            return "small"
+        if "full accounts" in text:
+            return "full"
+        checked += 1
+        if checked >= 20:
+            break
+    return None
 
 
 # ---------------------------------------------------------------------------

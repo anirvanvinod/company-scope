@@ -1,8 +1,5 @@
 """
 CompanyScope API — FastAPI application entry point.
-
-Phase 0: health and readiness endpoints only.
-Business logic, Companies House integration, and routers are added in later phases.
 """
 
 from fastapi import FastAPI
@@ -10,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 import app.models  # noqa: F401 — registers all ORM models with Base.metadata at startup
+from app.routers.companies import router as companies_router
 
 app = FastAPI(
     title="CompanyScope API",
@@ -46,6 +44,9 @@ async def ready() -> JSONResponse:
 # ---------------------------------------------------------------------------
 # Phase 0 root redirect — placeholder until the public API is wired up
 # ---------------------------------------------------------------------------
+
+
+app.include_router(companies_router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)

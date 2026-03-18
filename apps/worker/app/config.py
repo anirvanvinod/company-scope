@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     ch_api_key: str = ""
     ch_base_url: str = "https://api.company-information.service.gov.uk"
 
+    # AI inference endpoint (Ollama or OpenAI-compatible vLLM)
+    # Set ai_enabled=false to skip AI calls and always use the template fallback.
+    ai_enabled: bool = False
+    ai_inference_url: str = "http://localhost:11434"
+    ai_model_name: str = "mistral:7b-instruct"
+    ai_timeout_seconds: float = 8.0
+
 
 # Module-level singleton; imported by task modules.
 settings = Settings()

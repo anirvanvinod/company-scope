@@ -8,12 +8,16 @@ Set TEST_DATABASE_URL to an asyncpg connection string, e.g.:
 
 Tests that need a database are decorated with @pytest.mark.requires_db and are
 skipped automatically when TEST_DATABASE_URL is not set.
+
+Route tests use async_client + mock_session (no live DB required).
 """
 
 import os
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
@@ -64,3 +68,40 @@ async def db_session(db_engine) -> AsyncSession:
         async with session_factory() as session:
             yield session
         await conn.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Route-level fixtures (no live DB — mock session injected via DI override)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_session() -> AsyncMock:
+    """
+    An AsyncMock that stands in for an AsyncSession.
+
+    Route tests set return values on specific query functions; the mock session
+    is injected via FastAPI's dependency_overrides mechanism in async_client.
+    """
+    return AsyncMock(spec=AsyncSession)
+
+
+@pytest_asyncio.fixture
+async def async_client(mock_session: AsyncMock) -> AsyncClient:
+    """
+    An httpx AsyncClient wired to the FastAPI app with the DB session mocked.
+
+    Imports are deferred so that importing this fixture does not attempt a
+    real DB connection (the engine is initialised at module import time).
+    """
+    from app.db.session import get_session
+    from app.main import app
+
+    async def override_get_session():
+        yield mock_session
+
+    app.dependency_overrides[get_session] = override_get_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    app.dependency_overrides.pop(get_session, None)

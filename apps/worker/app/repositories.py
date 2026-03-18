@@ -280,6 +280,23 @@ _risk_signals = sa.Table(
     sa.Column("updated_at", sa.DateTime(timezone=True)),
 )
 
+_company_snapshots = sa.Table(
+    "company_snapshots",
+    _meta,
+    sa.Column("id", PgUUID(as_uuid=True)),
+    sa.Column("company_id", PgUUID(as_uuid=True)),
+    sa.Column("snapshot_version", sa.Integer),
+    sa.Column("methodology_version", sa.String(32)),
+    sa.Column("parser_version", sa.String(32)),
+    sa.Column("freshness_status", sa.String(32)),
+    sa.Column("snapshot_payload", JSONB),
+    sa.Column("snapshot_generated_at", sa.DateTime(timezone=True)),
+    sa.Column("source_last_checked_at", sa.DateTime(timezone=True)),
+    sa.Column("expires_at", sa.DateTime(timezone=True)),
+    sa.Column("is_current", sa.Boolean),
+    sa.Column("created_at", sa.DateTime(timezone=True)),
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1277,3 +1294,54 @@ async def upsert_risk_signals(
                     updated_at=now,
                 )
             )
+
+
+async def upsert_company_snapshot(
+    session: AsyncSession,
+    company_id: uuid.UUID,
+    snapshot_payload: dict,
+    methodology_version: str,
+    parser_version: str,
+    freshness_status: str = "current",
+    snapshot_version: int = 1,
+) -> uuid.UUID:
+    """
+    Replace the current snapshot for a company.
+
+    1. Marks any existing is_current=true row as is_current=false.
+    2. Inserts a new row with is_current=true.
+
+    Returns the new snapshot UUID.
+    Does not commit; the caller is responsible for commit.
+    """
+    now = _now()
+
+    # Retire the existing current snapshot (if any).
+    await session.execute(
+        sa.update(_company_snapshots)
+        .where(
+            sa.and_(
+                _company_snapshots.c.company_id == company_id,
+                _company_snapshots.c.is_current.is_(True),
+            )
+        )
+        .values(is_current=False)
+    )
+
+    new_id = uuid.uuid4()
+    await session.execute(
+        sa.insert(_company_snapshots).values(
+            id=new_id,
+            company_id=company_id,
+            snapshot_version=snapshot_version,
+            methodology_version=methodology_version,
+            parser_version=parser_version,
+            freshness_status=freshness_status,
+            snapshot_payload=snapshot_payload,
+            snapshot_generated_at=now,
+            source_last_checked_at=now,
+            is_current=True,
+            created_at=now,
+        )
+    )
+    return new_id
