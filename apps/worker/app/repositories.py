@@ -244,6 +244,42 @@ _financial_facts = sa.Table(
     sa.Column("updated_at", sa.DateTime(timezone=True)),
 )
 
+_derived_metrics = sa.Table(
+    "derived_metrics",
+    _meta,
+    sa.Column("id", PgUUID(as_uuid=True)),
+    sa.Column("company_id", PgUUID(as_uuid=True)),
+    sa.Column("financial_period_id", PgUUID(as_uuid=True)),
+    sa.Column("prior_period_id", PgUUID(as_uuid=True)),    # nullable
+    sa.Column("metric_key", sa.String(64)),
+    sa.Column("metric_value", sa.Numeric(20, 6)),           # nullable
+    sa.Column("unit", sa.String(32)),
+    sa.Column("confidence", sa.Numeric(5, 4)),              # nullable
+    sa.Column("confidence_band", sa.String(16)),
+    sa.Column("warnings", JSONB),
+    sa.Column("methodology_version", sa.String(16)),
+    sa.Column("generated_at", sa.DateTime(timezone=True)),
+)
+
+_risk_signals = sa.Table(
+    "risk_signals",
+    _meta,
+    sa.Column("id", PgUUID(as_uuid=True)),
+    sa.Column("company_id", PgUUID(as_uuid=True)),
+    sa.Column("signal_code", sa.String(64)),
+    sa.Column("signal_name", sa.Text),
+    sa.Column("category", sa.String(64)),
+    sa.Column("severity", sa.String(16)),
+    sa.Column("status", sa.String(16)),
+    sa.Column("explanation", sa.Text),
+    sa.Column("evidence", JSONB),
+    sa.Column("methodology_version", sa.String(32)),
+    sa.Column("first_detected_at", sa.DateTime(timezone=True)),
+    sa.Column("last_confirmed_at", sa.DateTime(timezone=True)),
+    sa.Column("resolved_at", sa.DateTime(timezone=True)),
+    sa.Column("updated_at", sa.DateTime(timezone=True)),
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1116,3 +1152,128 @@ async def upsert_financial_facts(
         count += 1
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# Phase 6A — derived metrics and risk signal persistence
+# ---------------------------------------------------------------------------
+
+
+async def upsert_derived_metrics(
+    session: AsyncSession,
+    company_id: uuid.UUID,
+    financial_period_id: uuid.UUID,
+    prior_period_id: Optional[uuid.UUID],
+    results: list[Any],
+    methodology_version: str,
+) -> None:
+    """
+    Upsert derived metric rows for one analysis run.
+
+    Conflict key: (company_id, financial_period_id, metric_key).
+    On conflict, overwrites with the latest computed values.
+
+    results is a list of MetricResult (from app.analytics.metrics).
+    metric_value=None is stored as NULL (not zero).
+    """
+    now = _now()
+    for result in results:
+        values: dict[str, Any] = {
+            "id": uuid.uuid4(),
+            "company_id": company_id,
+            "financial_period_id": financial_period_id,
+            "prior_period_id": prior_period_id,
+            "metric_key": result.metric_key,
+            "metric_value": result.metric_value,
+            "unit": result.unit,
+            "confidence": result.confidence,
+            "confidence_band": result.confidence_band,
+            "warnings": result.warnings if result.warnings else None,
+            "methodology_version": methodology_version,
+            "generated_at": now,
+        }
+        update_set = {k: v for k, v in values.items() if k not in ("id", "company_id")}
+        stmt = (
+            pg_insert(_derived_metrics)
+            .values(**values)
+            .on_conflict_do_update(
+                constraint="uq_derived_metrics",
+                set_=update_set,
+            )
+        )
+        await session.execute(stmt)
+
+
+async def upsert_risk_signals(
+    session: AsyncSession,
+    company_id: uuid.UUID,
+    results: list[Any],
+    methodology_version: str,
+) -> None:
+    """
+    Upsert risk signal rows based on the latest signal evaluation.
+
+    For each SignalResult:
+      fired=True  → INSERT status='active' / ON CONFLICT update last_confirmed_at
+      fired=False → UPDATE status='resolved' for any existing active row
+
+    Conflict key: (company_id, signal_code) — added in migration 0006.
+    results is a list of SignalResult (from app.analytics.signals).
+    """
+    now = _now()
+    for result in results:
+        if result.fired:
+            values: dict[str, Any] = {
+                "id": uuid.uuid4(),
+                "company_id": company_id,
+                "signal_code": result.signal_code,
+                "signal_name": result.signal_name,
+                "category": result.category,
+                "severity": result.severity,
+                "status": "active",
+                "explanation": result.explanation,
+                "evidence": result.evidence,
+                "methodology_version": methodology_version,
+                "first_detected_at": now,
+                "last_confirmed_at": now,
+                "resolved_at": None,
+                "updated_at": now,
+            }
+            update_set: dict[str, Any] = {
+                "signal_name": result.signal_name,
+                "severity": result.severity,
+                "status": "active",
+                "explanation": result.explanation,
+                "evidence": result.evidence,
+                "methodology_version": methodology_version,
+                "last_confirmed_at": now,
+                "resolved_at": None,
+                "updated_at": now,
+            }
+            stmt = (
+                pg_insert(_risk_signals)
+                .values(**values)
+                .on_conflict_do_update(
+                    constraint="uq_risk_signals",
+                    set_=update_set,
+                )
+            )
+            await session.execute(stmt)
+        else:
+            # Resolve any existing active row for this signal.
+            await session.execute(
+                sa.update(_risk_signals)
+                .where(
+                    sa.and_(
+                        _risk_signals.c.company_id == company_id,
+                        _risk_signals.c.signal_code == result.signal_code,
+                        _risk_signals.c.status == "active",
+                    )
+                )
+                .values(
+                    status="resolved",
+                    resolved_at=now,
+                    last_confirmed_at=now,
+                    updated_at=now,
+                )
+            )

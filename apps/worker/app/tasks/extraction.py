@@ -108,6 +108,8 @@ async def _extract_facts_async(company_number: str) -> dict[str, Any]:
         company_number,
     )
 
+    _enqueue_analysis = False
+
     async with get_storage_client() as s3:
         for doc in documents:
             filing_document_id: uuid.UUID = doc["filing_document_id"]
@@ -260,6 +262,7 @@ async def _extract_facts_async(company_number: str) -> dict[str, Any]:
                     no_facts += 1
                 else:
                     extracted += 1
+                    _enqueue_analysis = True
 
             except Exception as exc:
                 log.exception(
@@ -289,6 +292,12 @@ async def _extract_facts_async(company_number: str) -> dict[str, Any]:
                         "Could not mark document %s parse-failed", document_id
                     )
                 failed += 1
+
+    # Enqueue analysis task if at least one document was successfully extracted.
+    if _enqueue_analysis:
+        from app.tasks.analysis import compute_analysis  # deferred to avoid circular import
+        compute_analysis.delay(company_number)
+        log.info("Enqueued compute_analysis for %s", company_number)
 
     return {
         "company_number": company_number,

@@ -19,7 +19,7 @@ celery_app = Celery(
     # Task modules registered as they are implemented:
     # "app.tasks.risk_engine",
     # "app.tasks.snapshot",
-    include=["app.tasks.ingestion", "app.tasks.document_fetch", "app.tasks.document_parse", "app.tasks.extraction"],
+    include=["app.tasks.ingestion", "app.tasks.document_fetch", "app.tasks.document_parse", "app.tasks.extraction", "app.tasks.analysis"],
 )
 
 celery_app.conf.update(
