@@ -21,7 +21,7 @@ import pytest
 import respx
 from unittest.mock import AsyncMock, patch
 
-from ch_client.client import CH_BASE_URL, CompaniesHouseClient
+from ch_client.client import CH_BASE_URL, CH_DOC_BASE_URL, CompaniesHouseClient
 from ch_client.exceptions import (
     CHAuthError,
     CHNotFoundError,
@@ -32,6 +32,7 @@ from ch_client.exceptions import (
 from ch_client.schemas import (
     CHChargesResponse,
     CHCompanyProfile,
+    CHDocumentMetadata,
     CHFilingHistoryResponse,
     CHOfficersResponse,
     CHPSCsResponse,
@@ -519,3 +520,55 @@ async def test_non_timeout_request_error_raises_immediately() -> None:
             await client.get_company("12345678")
 
     assert call_count == 1, "Non-timeout RequestError must not be retried"
+
+
+# ---------------------------------------------------------------------------
+# Document API
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_get_document_metadata_returns_typed_response() -> None:
+    """get_document_metadata returns a CHDocumentMetadata with available_content_types."""
+    doc_id = "abc123xyz"
+    respx.get(f"{CH_DOC_BASE_URL}/document/{doc_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "company_number": "12345678",
+                "barcode": "X1Y2Z3",
+                "significant_date": "2024-03-31",
+                "significant_date_type": "made_up_date",
+                "category": "accounts",
+                "pages": 12,
+                "resources": {
+                    "application/pdf": {"href": "/document/abc123xyz/content"},
+                    "application/xhtml+xml": {"href": "/document/abc123xyz/content"},
+                },
+                "links": {"document": f"/document/{doc_id}"},
+            },
+        )
+    )
+    async with _make_client() as client:
+        result = await client.get_document_metadata(doc_id)
+
+    assert isinstance(result, CHDocumentMetadata)
+    assert result.company_number == "12345678"
+    assert result.category == "accounts"
+    assert result.pages == 12
+    assert "application/pdf" in result.available_content_types
+    assert "application/xhtml+xml" in result.available_content_types
+
+
+@respx.mock
+async def test_get_document_content_returns_bytes() -> None:
+    """get_document_content returns the raw bytes of the document."""
+    doc_id = "abc123xyz"
+    fake_pdf = b"%PDF-1.4 fake content"
+    respx.get(f"{CH_DOC_BASE_URL}/document/{doc_id}/content").mock(
+        return_value=httpx.Response(200, content=fake_pdf)
+    )
+    async with _make_client() as client:
+        result = await client.get_document_content(doc_id, "application/pdf")
+
+    assert result == fake_pdf

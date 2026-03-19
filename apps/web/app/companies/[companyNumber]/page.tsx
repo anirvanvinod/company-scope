@@ -2,39 +2,37 @@
  * Company overview page.
  *
  * Information hierarchy (docs/11-ui-ux-principles.md §Hierarchy principles):
- *   1. Identity + status
- *   2. Active signals (alert strip)
- *   3. Key financial facts + confidence
- *   4. AI/template narrative + observations
- *   5. Compliance overview + freshness
- *   6. Caveats
+ *   1. Active signals (alert strip)
+ *   2. Key financial facts + confidence
+ *   3. AI/template narrative + observations
+ *   4. Compliance overview + freshness
+ *
+ * Company identity and tab nav are now rendered by layout.tsx.
  *
  * Data strategy:
  *   - getCompany() returns the snapshot-first aggregate from GET /api/v1/companies/{number}
- *   - The snapshot provides ai_summary, active_signals, financial_summary
- *   - Company identity and compliance fields are read directly (always fresh)
+ *   - Next.js deduplicates the fetch: layout.tsx and page.tsx share one request
  *   - If snapshot_status === "not_built" we show identity data + a pending notice
  */
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { getCompany } from "@/lib/api";
+import { getCompany, getWatchlists, getWatchlistItems } from "@/lib/api";
+import { getServerSession, getAuthHeader } from "@/lib/auth";
 import {
   cn,
   formatDate,
   formatCurrency,
-  formatCompanyType,
-  formatAddress,
   formatAccountsType,
   formatNumber,
+  formatCompanyType,
 } from "@/lib/utils";
-import { CompanyTabNav } from "@/components/layout/CompanyTabNav";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ConfidencePip } from "@/components/ui/ConfidencePip";
 import { FreshnessTag } from "@/components/ui/FreshnessTag";
 import { SignalCard } from "@/components/ui/SignalCard";
 import { NullState } from "@/components/ui/NullState";
+import { WatchlistButton } from "@/components/company/WatchlistButton";
 import type {
   CompanyAggregate,
   FinancialSummary,
@@ -90,98 +88,63 @@ export default async function CompanyOverviewPage({ params }: PageProps) {
   const { company, overview, financial_summary, active_signals, ai_summary, freshness } =
     data as CompanyAggregate;
 
-  const address = formatAddress(company.registered_office_address);
   const hasSignals = active_signals.length > 0;
   const snapshotBuilt = freshness.snapshot_status === "current";
-  const base = `/companies/${companyNumber}`;
+
+  // Watchlist state — computed server-side so WatchlistButton renders with correct initial state
+  const user = await getServerSession();
+  const authHeaders = await getAuthHeader();
+  let isWatched = false;
+  let defaultWatchlistId: string | null = null;
+
+  if (user) {
+    const { data: wlData } = await getWatchlists(authHeaders as Record<string, string>);
+    const lists = wlData ?? [];
+    const defaultList = lists.find((w) => w.is_default) ?? lists[0] ?? null;
+    defaultWatchlistId = defaultList?.id ?? null;
+
+    if (defaultList) {
+      // Fetch items for the default watchlist to determine watched state
+      const { data: wlDetail } = await getWatchlistItems(
+        defaultList.id,
+        authHeaders as Record<string, string>,
+      );
+      isWatched =
+        (wlDetail?.items ?? []).some(
+          (item) => item.company_number === companyNumber,
+        ) ?? false;
+    }
+  }
 
   return (
     <main>
       {/* ---------------------------------------------------------------- */}
-      {/* Company header                                                   */}
+      {/* Watchlist button + signal strip                                  */}
       {/* ---------------------------------------------------------------- */}
-      <header className="bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          {/* Breadcrumb */}
-          <p className="mb-3 text-xs text-stone-400">
-            <a href="/search" className="hover:text-stone-600">
-              Search
-            </a>{" "}
-            / {company.company_number}
-          </p>
-
-          {/* Company name + status */}
-          <div className="flex flex-wrap items-start gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-stone-900">
-              {company.company_name}
-            </h1>
-            {company.company_status && (
-              <div className="mt-1">
-                <StatusBadge status={company.company_status} />
-              </div>
-            )}
-          </div>
-
-          {/* Meta row */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-stone-500">
-            <span className="mono-id text-stone-400">{company.company_number}</span>
-            {company.company_type && (
-              <MetaDivider />
-            )}
-            {company.company_type && (
-              <span>{formatCompanyType(company.company_type) ?? company.company_type}</span>
-            )}
-            {company.jurisdiction && (
-              <>
-                <MetaDivider />
-                <span className="capitalize">{company.jurisdiction.replace(/-/g, " ")}</span>
-              </>
-            )}
-            {company.date_of_creation && (
-              <>
-                <MetaDivider />
-                <span>Incorporated {formatDate(company.date_of_creation)}</span>
-              </>
-            )}
-          </div>
-
-          {address && (
-            <p className="mt-1 text-sm text-stone-500">{address}</p>
-          )}
-
-          {/* Cessation notice */}
-          {company.cessation_date && (
-            <p className="mt-2 text-sm text-stone-500">
-              <span className="font-medium text-stone-700">Dissolved</span>{" "}
-              {formatDate(company.cessation_date)}
+      <div className="border-b border-stone-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-stone-400">
+              {hasSignals
+                ? `${active_signals.length} active signal${active_signals.length !== 1 ? "s" : ""}`
+                : "No active signals"}
             </p>
-          )}
+            <WatchlistButton
+              companyNumber={companyNumber}
+              isWatched={isWatched}
+              watchlistId={defaultWatchlistId}
+              unauthenticated={!user}
+            />
+          </div>
         </div>
-      </header>
+      </div>
 
-      {/* ---------------------------------------------------------------- */}
-      {/* Tab navigation                                                   */}
-      {/* ---------------------------------------------------------------- */}
-      <nav className="border-b border-stone-200 bg-white" aria-label="Company sections">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <CompanyTabNav base={base} />
-        </div>
-      </nav>
-
-      {/* ---------------------------------------------------------------- */}
-      {/* Signal alert strip                                               */}
-      {/* ---------------------------------------------------------------- */}
       {hasSignals && (
         <section
-          className="border-t border-stone-200 bg-white"
+          className="border-b border-stone-200 bg-white"
           aria-label="Active risk signals"
         >
-          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-stone-400">
-              {active_signals.length === 1
-                ? "1 active signal"
-                : `${active_signals.length} active signals`}
-            </p>
+          <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex flex-wrap gap-2">
               {active_signals.map((sig) => (
                 <SignalCard key={sig.signal_code} signal={sig} compact />
@@ -245,10 +208,6 @@ export default async function CompanyOverviewPage({ params }: PageProps) {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function MetaDivider() {
-  return <span className="text-stone-300">·</span>;
-}
 
 // ---- Financial snapshot card -------------------------------------------
 

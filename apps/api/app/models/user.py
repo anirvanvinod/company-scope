@@ -40,6 +40,8 @@ class User(Base, TimestampMixin):
     display_name: Mapped[Optional[str]] = mapped_column(Text)
     auth_provider: Mapped[str] = mapped_column(String(32), nullable=False)
     auth_subject: Mapped[Optional[str]] = mapped_column(Text)
+    # Populated only for auth_provider='password'; NULL for OAuth users.
+    password_hash: Mapped[Optional[str]] = mapped_column(Text)
 
     # Relationships
     watchlists: Mapped[list["Watchlist"]] = relationship(

@@ -11,7 +11,9 @@
       "Bash(.venv/Scripts/pytest apps/worker/tests/test_extraction.py::test_successful_extraction_increments_extracted -v 2>&1)",
       "Bash(python -m pytest tests/test_routes_companies.py -v --tb=short)",
       "Bash(npx tsc:*)",
-      "Bash(pnpm type-check:*)"
+      "Bash(pnpm type-check:*)",
+      "Bash(find /c/Users/anirv/Documents/sandbox/uk-companies-financial-analysis/apps/api -name *auth* -o -name *user* -o -name *session*)",
+      "Bash(cat C:/Users/anirv/Documents/sandbox/uk-companies-financial-analysis/apps/api/alembic/versions/*.py)"
     ]
   }
 }

@@ -79,6 +79,18 @@ def not_found(message: str, request_id: str | None = None) -> dict:
     }
 
 
+def unauthorized(message: str, request_id: str | None = None) -> dict:
+    return {
+        "data": None,
+        "meta": {"request_id": request_id or _req_id()},
+        "error": {
+            "code": "unauthorized",
+            "message": message,
+            "details": {},
+        },
+    }
+
+
 def bad_request(message: str, details: dict | None = None, request_id: str | None = None) -> dict:
     return {
         "data": None,

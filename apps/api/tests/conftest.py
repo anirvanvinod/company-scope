@@ -13,6 +13,7 @@ Route tests use async_client + mock_session (no live DB required).
 """
 
 import os
+import uuid as _uuid
 from unittest.mock import AsyncMock
 
 import pytest
@@ -105,3 +106,50 @@ async def async_client(mock_session: AsyncMock) -> AsyncClient:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
     app.dependency_overrides.pop(get_session, None)
+
+
+# ---------------------------------------------------------------------------
+# Authenticated client — mocks both session and get_current_user
+# ---------------------------------------------------------------------------
+
+_MOCK_USER_ID = _uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+_MOCK_USER = {
+    "id": _MOCK_USER_ID,
+    "email": "test@example.com",
+    "display_name": "Test User",
+    "auth_provider": "password",
+}
+
+
+@pytest.fixture
+def mock_user() -> dict:
+    """Return the canonical mock user dict used in auth / watchlist tests."""
+    return _MOCK_USER
+
+
+@pytest_asyncio.fixture
+async def auth_client(mock_session: AsyncMock) -> AsyncClient:
+    """
+    An httpx AsyncClient that bypasses JWT verification by overriding
+    get_current_user to return the mock user directly.
+
+    Use this fixture for tests of endpoints that require authentication
+    (watchlists, /me).  For endpoints under /auth/* use async_client.
+    """
+    from app.auth import get_current_user
+    from app.db.session import get_session
+    from app.main import app
+
+    async def override_get_session():
+        yield mock_session
+
+    async def override_get_current_user():
+        return _MOCK_USER
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    app.dependency_overrides.pop(get_session, None)
+    app.dependency_overrides.pop(get_current_user, None)

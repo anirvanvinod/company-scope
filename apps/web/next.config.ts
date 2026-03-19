@@ -15,8 +15,30 @@ import type { NextConfig } from "next";
  *   API_INTERNAL_URL     → http://api:8000        (Next.js server → Docker network)
  */
 const nextConfig: NextConfig = {
-  // Rewrites, route handlers, and server-side data fetching are added in
-  // later phases as the public API surface is built out.
+  async headers() {
+    return [
+      {
+        // Apply to every route.
+        source: "/(.*)",
+        headers: [
+          // Prevent MIME-type sniffing
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // Disallow framing (clickjacking protection)
+          { key: "X-Frame-Options", value: "DENY" },
+          // Limit referrer information sent on cross-origin navigations
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Disable browser features that this app never uses
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+          // Note: Strict-Transport-Security (HSTS) should be set at the
+          // reverse proxy or CDN layer in production, not here, so it is
+          // excluded from this config.
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

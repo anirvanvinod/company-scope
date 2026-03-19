@@ -211,3 +211,161 @@ export function formatAccountsType(
   if (!type) return null;
   return ACCOUNTS_TYPE_LABELS[type.toLowerCase()] ?? type;
 }
+
+// ---------------------------------------------------------------------------
+// Financial fact / metric labels
+// ---------------------------------------------------------------------------
+
+const FACT_LABELS: Record<string, string> = {
+  revenue: "Revenue / Turnover",
+  gross_profit: "Gross profit",
+  operating_profit: "Operating profit",
+  profit_loss_after_tax: "Profit / loss after tax",
+  current_assets: "Current assets",
+  fixed_assets: "Fixed assets",
+  total_assets_less_current_liabilities: "Total assets less current liabilities",
+  creditors_within_one_year: "Creditors: within 1 year",
+  creditors_after_one_year: "Creditors: after 1 year",
+  net_assets_liabilities: "Net assets / liabilities",
+  cash: "Cash at bank",
+  average_number_of_employees: "Average number of employees",
+};
+
+export function formatFactName(name: string): string {
+  return FACT_LABELS[name] ?? name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const METRIC_LABELS: Record<string, { label: string; description: string }> = {
+  revenue_growth: {
+    label: "Revenue growth",
+    description: "Year-on-year change in revenue / turnover",
+  },
+  net_assets_growth: {
+    label: "Net assets growth",
+    description: "Year-on-year change in net assets / liabilities",
+  },
+  profit_margin: {
+    label: "Net profit margin",
+    description: "Profit after tax as a proportion of revenue",
+  },
+  liquidity_proxy: {
+    label: "Liquidity proxy",
+    description: "Current assets relative to short-term creditors (not an audited ratio)",
+  },
+  leverage_proxy: {
+    label: "Leverage proxy",
+    description: "Total creditors relative to net assets (not an audited ratio)",
+  },
+};
+
+export function formatMetricName(key: string): string {
+  return METRIC_LABELS[key]?.label ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function formatMetricDescription(key: string): string | null {
+  return METRIC_LABELS[key]?.description ?? null;
+}
+
+/**
+ * Format a large number as an abbreviated currency label for chart axes.
+ * e.g. 1_200_000 → "£1.2M", 250_000 → "£250K"
+ */
+export function formatYAxisLabel(value: number, currency?: string | null): string {
+  const symbol = currency === "GBP" ? "£" : currency === "USD" ? "$" : currency === "EUR" ? "€" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${symbol}${(value / 1_000).toFixed(0)}K`;
+  return `${symbol}${value.toFixed(0)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Officer roles
+// ---------------------------------------------------------------------------
+
+const ROLE_LABELS: Record<string, string> = {
+  director: "Director",
+  secretary: "Company secretary",
+  "managing-director": "Managing director",
+  nominee: "Nominee",
+  "nominee-director": "Nominee director",
+  "nominee-secretary": "Nominee secretary",
+  "corporate-director": "Corporate director",
+  "corporate-secretary": "Corporate secretary",
+  chairman: "Chairman",
+  "chief-executive-officer": "Chief executive officer",
+  "llp-member": "LLP member",
+  "llp-designated-member": "Designated LLP member",
+  "judicial-factor": "Judicial factor",
+  "receiver-and-manager": "Receiver and manager",
+  "cic-manager": "CIC manager",
+};
+
+export function formatRole(role: string | null | undefined): string | null {
+  if (!role) return null;
+  return ROLE_LABELS[role.toLowerCase()] ?? role;
+}
+
+// ---------------------------------------------------------------------------
+// PSC kind labels
+// ---------------------------------------------------------------------------
+
+const PSC_KIND_LABELS: Record<string, string> = {
+  "individual-person-with-significant-control": "Individual",
+  "corporate-entity-person-with-significant-control": "Corporate entity",
+  "legal-person-with-significant-control": "Legal person",
+  "super-secure-person-with-significant-control": "Super-secure (restricted)",
+  "persons-with-significant-control-statement": "PSC statement",
+  exemptions: "Exemption",
+};
+
+export function formatPscKind(kind: string | null | undefined): string | null {
+  if (!kind) return null;
+  return PSC_KIND_LABELS[kind.toLowerCase()] ?? kind;
+}
+
+// ---------------------------------------------------------------------------
+// Nature of control labels
+// ---------------------------------------------------------------------------
+
+const NATURE_LABELS: Record<string, string> = {
+  "ownership-of-shares-25-to-50-percent": "Ownership of shares (25–50%)",
+  "ownership-of-shares-50-to-75-percent": "Ownership of shares (50–75%)",
+  "ownership-of-shares-75-to-100-percent": "Ownership of shares (75–100%)",
+  "ownership-of-shares-25-to-50-percent-as-trust": "Ownership of shares as trust (25–50%)",
+  "ownership-of-shares-50-to-75-percent-as-trust": "Ownership of shares as trust (50–75%)",
+  "ownership-of-shares-75-to-100-percent-as-trust": "Ownership of shares as trust (75–100%)",
+  "voting-rights-25-to-50-percent": "Voting rights (25–50%)",
+  "voting-rights-50-to-75-percent": "Voting rights (50–75%)",
+  "voting-rights-75-to-100-percent": "Voting rights (75–100%)",
+  "voting-rights-25-to-50-percent-as-trust": "Voting rights as trust (25–50%)",
+  "voting-rights-50-to-75-percent-as-trust": "Voting rights as trust (50–75%)",
+  "voting-rights-75-to-100-percent-as-trust": "Voting rights as trust (75–100%)",
+  "right-to-appoint-and-remove-directors": "Right to appoint / remove directors",
+  "right-to-appoint-and-remove-directors-as-trust": "Right to appoint / remove directors (as trust)",
+  "right-to-appoint-and-remove-members": "Right to appoint / remove members",
+  "significant-influence-or-control": "Significant influence or control",
+  "significant-influence-or-control-as-trust": "Significant influence or control (as trust)",
+};
+
+export function formatNatureOfControl(nature: string): string {
+  return (
+    NATURE_LABELS[nature] ??
+    nature.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Charge status labels
+// ---------------------------------------------------------------------------
+
+const CHARGE_STATUS_LABELS: Record<string, string> = {
+  outstanding: "Outstanding",
+  "fully-satisfied": "Satisfied",
+  "part-satisfied": "Partially satisfied",
+  satisfied: "Satisfied",
+};
+
+export function formatChargeStatus(status: string | null | undefined): string | null {
+  if (!status) return null;
+  return CHARGE_STATUS_LABELS[status.toLowerCase()] ?? status;
+}

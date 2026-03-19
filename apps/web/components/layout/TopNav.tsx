@@ -1,13 +1,17 @@
 /**
  * TopNav — global navigation bar.
  *
- * Server component. The search form uses a plain HTML GET action so it
- * works without JavaScript and requires no client-side router.
+ * Async server component. Reads the session to show the correct auth state.
+ * The search form uses a plain HTML GET action so it works without JavaScript.
  */
 
 import Link from "next/link";
 
-export function TopNav() {
+import { getServerSession, signOut } from "@/lib/auth";
+
+export async function TopNav() {
+  const user = await getServerSession();
+
   return (
     <header className="sticky top-0 z-40 border-b border-stone-200 bg-white/95 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6 lg:px-8">
@@ -51,6 +55,32 @@ export function TopNav() {
           >
             Methodology
           </Link>
+
+          {user ? (
+            <>
+              <Link
+                href="/watchlists"
+                className="hidden text-stone-500 hover:text-stone-900 sm:block"
+              >
+                Watchlists
+              </Link>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="text-stone-400 hover:text-stone-700"
+                >
+                  Sign out
+                </button>
+              </form>
+            </>
+          ) : (
+            <Link
+              href="/sign-in"
+              className="text-stone-500 hover:text-stone-900"
+            >
+              Sign in
+            </Link>
+          )}
         </nav>
       </div>
     </header>

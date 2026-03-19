@@ -132,3 +132,156 @@ export interface CompanyAggregate {
   ai_summary: AiNarrativeSummary | null;
   freshness: Freshness;
 }
+
+// ---------------------------------------------------------------------------
+// Financials
+// ---------------------------------------------------------------------------
+
+export interface FactDetail {
+  /** Decimal serialised as string; null means not extractable */
+  value: string | null;
+  unit: string | null;
+  /** Decimal serialised as string */
+  confidence: string | null;
+  confidence_band: ConfidenceBand;
+  /** Verbatim label from the source document */
+  raw_label: string | null;
+  extraction_method: string | null;
+  is_derived: boolean;
+}
+
+export interface PeriodFacts {
+  period_id: string;
+  period_end: string;
+  period_start: string | null;
+  accounts_type: string | null;
+  currency_code: string | null;
+  extraction_confidence: string | null;
+  confidence_band: ConfidenceBand;
+  /** Keyed by canonical fact name (e.g. "revenue", "net_assets_liabilities") */
+  facts: Record<string, FactDetail>;
+}
+
+export interface MetricDetail {
+  value: string | null;
+  unit: string;
+  confidence: string | null;
+  confidence_band: ConfidenceBand;
+  warnings: string[];
+}
+
+export interface SeriesPoint {
+  period_end: string;
+  value: string | null;
+  confidence_band: ConfidenceBand;
+}
+
+export interface FinancialsDataQuality {
+  periods_available?: number;
+  primary_period_facts_available?: number;
+  primary_period_confidence_band?: string;
+  /** Set when no financial data is available at all */
+  message?: string;
+}
+
+export interface FinancialsResponse {
+  periods: PeriodFacts[];
+  derived_metrics: Record<string, MetricDetail>;
+  series: Record<string, SeriesPoint[]>;
+  data_quality: FinancialsDataQuality;
+}
+
+// ---------------------------------------------------------------------------
+// Filings
+// ---------------------------------------------------------------------------
+
+export interface FilingItem {
+  transaction_id: string;
+  category: string | null;
+  type: string | null;
+  description: string | null;
+  action_date: string | null;
+  date_filed: string | null;
+  pages: number | null;
+  paper_filed: boolean | null;
+  has_document: boolean;
+  parse_status: string | null;
+  source_links: Record<string, string> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Officers
+// ---------------------------------------------------------------------------
+
+export interface OfficerItem {
+  name: string;
+  role: string | null;
+  nationality: string | null;
+  occupation: string | null;
+  country_of_residence: string | null;
+  appointed_on: string | null;
+  resigned_on: string | null;
+  is_current: boolean;
+  date_of_birth_month: number | null;
+  date_of_birth_year: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// PSC (persons with significant control)
+// ---------------------------------------------------------------------------
+
+export interface PscItem {
+  name: string | null;
+  kind: string | null;
+  natures_of_control: string[];
+  notified_on: string | null;
+  ceased_on: string | null;
+  nationality: string | null;
+  country_of_residence: string | null;
+  is_current: boolean;
+  date_of_birth_month: number | null;
+  date_of_birth_year: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Auth / user
+// ---------------------------------------------------------------------------
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  display_name: string | null;
+  auth_provider: string;
+}
+
+export interface WatchlistOut {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  item_count: number;
+  created_at: string | null;
+}
+
+export interface WatchlistItemOut {
+  company_number: string;
+  company_name: string;
+  company_status: string | null;
+  monitoring_status: string;
+  added_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Charges
+// ---------------------------------------------------------------------------
+
+export interface ChargeItem {
+  charge_id: string;
+  status: string | null;
+  delivered_on: string | null;
+  created_on: string | null;
+  resolved_on: string | null;
+  persons_entitled: Array<{ name: string }> | null;
+  particulars: Record<string, unknown> | null;
+  source_last_checked_at: string | null;
+}
