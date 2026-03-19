@@ -290,7 +290,11 @@ def refresh_company(self: Any, company_number: str) -> dict[str, Any]:
     Companies House and upserts them into the canonical DB.
     """
     try:
-        return asyncio.run(_refresh_company_async(company_number))
+        result = asyncio.run(_refresh_company_async(company_number))
+        from app.tasks.document_fetch import fetch_documents  # local import avoids circular
+        fetch_documents.apply_async(args=[company_number])
+        log.info("Enqueued fetch_documents for %s", company_number)
+        return result
     except (CHAuthError, CHNotFoundError):
         raise  # non-retryable: auth failure or company not found upstream
     except Exception as exc:

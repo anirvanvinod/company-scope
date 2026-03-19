@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _CHBase(BaseModel):
@@ -142,7 +142,10 @@ class CHFilingHistoryItem(_CHBase):
     description: Optional[str] = None
     description_values: Optional[dict[str, Any]] = None
     action_date: Optional[date] = None
-    date: Optional[date] = None         # date filed
+    # Renamed to avoid shadowing the `date` type from datetime under
+    # `from __future__ import annotations` (Pydantic resolves "Optional[date]"
+    # using the class __dict__ where `date = None` would mask datetime.date).
+    date_filed: Optional[date] = Field(default=None, alias="date")
     pages: Optional[int] = None
     barcode: Optional[str] = None
     paper_filed: Optional[bool] = None

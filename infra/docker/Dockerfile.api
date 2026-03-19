@@ -1,24 +1,26 @@
 FROM python:3.12-slim
+WORKDIR /workspace
 
-WORKDIR /app
-
-# Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Install runtime dependencies before copying source (better layer caching).
-# Update this list when apps/api/pyproject.toml dependencies change.
-RUN uv pip install --system \
-    "fastapi>=0.115" \
-    "uvicorn[standard]>=0.30" \
-    "pydantic>=2.8" \
-    "pydantic-settings>=2.4" \
-    "sqlalchemy>=2.0" \
-    "alembic>=1.13" \
-    "asyncpg>=0.29" \
-    "redis>=5.0" \
-    "httpx>=0.27"
+# Copy workspace metadata for dependency resolution (better layer caching)
+COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml ./apps/api/pyproject.toml
+COPY apps/worker/pyproject.toml ./apps/worker/pyproject.toml
+COPY packages/ch-client/pyproject.toml ./packages/ch-client/pyproject.toml
 
-COPY apps/api/ .
+# Copy source code for the packages this service needs
+COPY apps/api/ ./apps/api/
+COPY packages/ch-client/ ./packages/ch-client/
+
+# Install the api package and all its dependencies using the workspace lockfile
+RUN uv sync --package companyscope-api --no-dev
+
+# Add venv binaries (uvicorn, alembic, etc.) to PATH
+ENV PATH="/workspace/.venv/bin:$PATH"
+
+# Make the app and ch_client packages importable
+ENV PYTHONPATH="/workspace/apps/api:/workspace/packages/ch-client"
 
 EXPOSE 8000
 

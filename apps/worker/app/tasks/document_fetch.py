@@ -293,7 +293,12 @@ def fetch_documents(self: Any, company_number: str) -> dict[str, Any]:
     Retryable: transient network errors, rate limits, 5xx responses.
     """
     try:
-        return asyncio.run(_fetch_documents_async(company_number))
+        result = asyncio.run(_fetch_documents_async(company_number))
+        if result.get("fetched", 0) > 0:
+            from app.tasks.document_parse import parse_documents  # local import avoids circular
+            parse_documents.apply_async(args=[company_number])
+            log.info("Enqueued parse_documents for %s", company_number)
+        return result
     except (CHAuthError, CHNotFoundError):
         raise  # non-retryable
     except Exception as exc:

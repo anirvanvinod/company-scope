@@ -225,7 +225,12 @@ def parse_documents(self: Any, company_number: str) -> dict[str, Any]:
     Retryable: transient DB errors and unexpected exceptions.
     """
     try:
-        return asyncio.run(_parse_documents_async(company_number))
+        result = asyncio.run(_parse_documents_async(company_number))
+        if result.get("classified", 0) > 0:
+            from app.tasks.extraction import extract_facts  # local import avoids circular
+            extract_facts.apply_async(args=[company_number])
+            log.info("Enqueued extract_facts for %s", company_number)
+        return result
     except ValueError:
         raise  # non-retryable — company missing from DB
     except Exception as exc:

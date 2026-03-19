@@ -1,24 +1,25 @@
 FROM python:3.12-slim
+WORKDIR /workspace
 
-WORKDIR /app
-
-# Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Install runtime dependencies before copying source (better layer caching).
-# Update this list when apps/worker/pyproject.toml dependencies change.
-RUN uv pip install --system \
-    "celery[redis]>=5.4" \
-    "pydantic>=2.8" \
-    "pydantic-settings>=2.4" \
-    "sqlalchemy>=2.0" \
-    "alembic>=1.13" \
-    "asyncpg>=0.29" \
-    "redis>=5.0" \
-    "httpx>=0.27"
+# Copy workspace metadata for dependency resolution (better layer caching)
+COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml ./apps/api/pyproject.toml
+COPY apps/worker/pyproject.toml ./apps/worker/pyproject.toml
+COPY packages/ch-client/pyproject.toml ./packages/ch-client/pyproject.toml
 
-COPY apps/worker/ .
+# Copy source code for the packages this service needs
+COPY apps/worker/ ./apps/worker/
+COPY packages/ch-client/ ./packages/ch-client/
 
-# Default command: start a Celery worker consuming all defined queues.
-# The docker-compose.yml overrides this with the full queue list.
+# Install the worker package and all its dependencies using the workspace lockfile
+RUN uv sync --package companyscope-worker --no-dev
+
+# Add venv binaries (celery, etc.) to PATH
+ENV PATH="/workspace/.venv/bin:$PATH"
+
+# Make the app and ch_client packages importable
+ENV PYTHONPATH="/workspace/apps/worker:/workspace/packages/ch-client"
+
 CMD ["celery", "-A", "app.main:celery_app", "worker", "--loglevel=info"]

@@ -13,7 +13,17 @@
       "Bash(npx tsc:*)",
       "Bash(pnpm type-check:*)",
       "Bash(find /c/Users/anirv/Documents/sandbox/uk-companies-financial-analysis/apps/api -name *auth* -o -name *user* -o -name *session*)",
-      "Bash(cat C:/Users/anirv/Documents/sandbox/uk-companies-financial-analysis/apps/api/alembic/versions/*.py)"
+      "Bash(cat C:/Users/anirv/Documents/sandbox/uk-companies-financial-analysis/apps/api/alembic/versions/*.py)",
+      "Bash(docker compose:*)",
+      "Read(//usr/local/bin/**)",
+      "Read(//usr/bin/**)",
+      "Read(//c/Program Files/Rancher Desktop/resources/resources/win32/bin//**)",
+      "Read(//c/Users/anirv/AppData/Local/Programs/**)",
+      "Bash(export PATH=\"/c/Program Files/Rancher Desktop/resources/resources/win32/bin:$PATH\")",
+      "Bash(export PATH=\"/c/Program Files/Rancher Desktop/resources/resources/win32/bin:/usr/bin:$PATH\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/companies/SC658140/refresh)",
+      "Bash(python3 -m json.tool)",
+      "WebFetch(domain:localhost)"
     ]
   }
 }

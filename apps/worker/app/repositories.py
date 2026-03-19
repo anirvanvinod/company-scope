@@ -398,7 +398,7 @@ async def upsert_filings(
             "description": item.description,
             "description_values": item.description_values,
             "action_date": item.action_date,
-            "date_filed": item.date,
+            "date_filed": item.date_filed,
             "pages": item.pages,
             "barcode": item.barcode,
             "paper_filed": item.paper_filed,
@@ -715,7 +715,7 @@ async def upsert_document_metadata(
         "available_content_types": metadata.available_content_types or [],
         "fetch_status": "pending",
         "parse_status": "pending",
-        "metadata_payload": metadata.model_dump(exclude_none=True),
+        "metadata_payload": metadata.model_dump(mode="json", exclude_none=True),
         "updated_at": now,
     }
     # On conflict, refresh metadata fields only — do not reset fetch_status.

@@ -2,7 +2,8 @@
 CompanyScope API — FastAPI application entry point.
 """
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -28,6 +29,48 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 
 app.state.limiter = limiter
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Wrap FastAPI HTTPException in the standard API error envelope."""
+    _code_map = {
+        400: "bad_request",
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        409: "conflict",
+        422: "unprocessable",
+    }
+    code = _code_map.get(exc.status_code, "error")
+    message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        {
+            "data": None,
+            "meta": {},
+            "error": {"code": code, "message": message, "details": {}},
+        },
+        status_code=exc.status_code,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Wrap Pydantic request validation errors in the standard API error envelope."""
+    return JSONResponse(
+        {
+            "data": None,
+            "meta": {},
+            "error": {
+                "code": "validation_error",
+                "message": "Request validation failed.",
+                "details": exc.errors(),
+            },
+        },
+        status_code=422,
+    )
 
 
 @app.exception_handler(RateLimitExceeded)

@@ -128,3 +128,5 @@ class CompanySnapshotPayload(BaseModel):
     summary_source: str                # "ai" or "template"
     methodology_version: str
     model_version: str                 # AI model name, empty string for template
+    financial_summary: dict[str, Any] = Field(default_factory=dict)
+    active_signals: list[dict[str, Any]] = Field(default_factory=list)

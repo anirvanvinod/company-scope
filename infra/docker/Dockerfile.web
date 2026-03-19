@@ -1,17 +1,11 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
 WORKDIR /app
 
-# Enable pnpm via corepack
 RUN corepack enable pnpm
 
-# Install dependencies using lockfile for reproducible installs
-FROM base AS deps
-COPY apps/web/package.json apps/web/pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+COPY apps/web/package.json ./
+RUN pnpm install
 
-# Development image — includes source and hot reload
-FROM base AS dev
-COPY --from=deps /app/node_modules ./node_modules
 COPY apps/web/ .
 
 EXPOSE 3000

@@ -204,6 +204,52 @@ uv run alembic downgrade base && uv run alembic upgrade head
 
 ---
 
+## MVP deployment checklist
+
+Use this before making the app publicly accessible.
+
+### Infrastructure
+- [ ] PostgreSQL, Redis, MinIO running with non-default credentials
+- [ ] `ENVIRONMENT=production` set in deployment environment
+- [ ] `SECRET_KEY` set to a random 32-byte hex value (`openssl rand -hex 32`) — API refuses to start with default
+- [ ] `CH_API_KEY` set to a valid Companies House API key
+- [ ] `DATABASE_URL` / `REDIS_URL` / `MINIO_*` all pointing to production services
+- [ ] `API_INTERNAL_URL` set to the Docker-network name (`http://api:8000`) if using Docker Compose
+- [ ] `NEXT_PUBLIC_API_URL` set to the public-facing API hostname
+- [ ] Database migrations applied: `uv run alembic upgrade head`
+
+### TLS / reverse proxy
+- [ ] TLS termination at reverse proxy or CDN (nginx, Cloudflare, etc.)
+- [ ] `Strict-Transport-Security` (HSTS) header set at reverse proxy level — not in `next.config.ts`
+- [ ] API port (8000) NOT exposed publicly — only the Next.js app (3000) should be internet-facing; API accessed via internal network only
+
+### Auth and sessions
+- [ ] `secure: true` on the `cs_session` cookie (enforced when `NODE_ENV=production`)
+- [ ] JWT expiry confirmed: 30-day sessions (no refresh tokens yet — see known gaps)
+
+### Security headers (already set in next.config.ts)
+- [x] `X-Content-Type-Options: nosniff`
+- [x] `X-Frame-Options: DENY`
+- [x] `Referrer-Policy: strict-origin-when-cross-origin`
+- [x] `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+
+### Rate limiting (already active)
+- [x] `/auth/register` — 5 requests/minute per IP
+- [x] `/auth/login` — 10 requests/minute per IP
+- [ ] Redis rate-limit storage confirmed (`REDIS_URL` must be reachable by the API)
+
+### Known gaps before public launch
+| Gap | Risk | Mitigation |
+|---|---|---|
+| JWT refresh tokens not implemented | Sessions expire after 30 days with no renewal | Users re-authenticate after expiry |
+| Password reset flow missing | Locked-out users cannot self-serve | Manual DB intervention only |
+| Email verification on registration missing | Bot accounts possible | Rate limiting + CH_API_KEY cost provides some friction |
+| Rate limiter per-IP only | Authenticated users share IP limit with anonymous | Low risk at MVP scale |
+| CSP not implemented | XSS impact slightly higher | Next.js App Router mitigates most vectors; no `eval` or `dangerouslySetInnerHTML` in app |
+| CSRF: relies on SameSite=strict + Server Actions origin check | No explicit CSRF tokens | Acceptable for current architecture |
+
+---
+
 ## Environment variables quick reference
 
 See `.env.example` at the repo root for the full variable list with comments.
